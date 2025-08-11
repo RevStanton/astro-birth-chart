@@ -8,7 +8,12 @@
 </head>
 <body>
   <main>
-    <h1>Natal Chart (Lite Mode — 1 API call)</h1>
+    <h1>Natal Chart</h1>
+
+    <div class="controls">
+      <label><input type="checkbox" id="show-minor-aspects"> Show minor aspects</label>
+      <label><input type="checkbox" id="show-asteroids" checked> Show asteroids/points</label>
+    </div>
 
     <form id="natal-form">
       <fieldset>
@@ -93,6 +98,7 @@
     <section id="results" class="hidden">
       <div class="panel">
         <canvas id="wheel" width="520" height="520"></canvas>
+        <div id="tooltip" class="tooltip" hidden></div>
         <div class="legend">
           <div><span class="leg conj"></span> Conjunction</div>
           <div><span class="leg trine"></span> Trine</div>

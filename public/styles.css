@@ -60,3 +60,11 @@ canvas { background: #0b0f2b; border-radius: 12px; border: 1px solid #262b4c; }
 .legend .square { background: var(--asp-square); }
 .legend .sextile { background: var(--asp-sextile); }
 .legend .opp { background: var(--asp-opp); }
+
+.controls { display:flex; gap:16px; align-items:center; color:var(--muted); margin: 6px 0 0; }
+.tooltip {
+  position:absolute; pointer-events:none; padding:6px 8px; font-size:12px;
+  background:#11162e; color:#e9ecff; border:1px solid #2c3358; border-radius:8px;
+  box-shadow:0 6px 14px rgba(0,0,0,.35); transform:translate(-50%,-140%);
+  z-index:10;
+}
