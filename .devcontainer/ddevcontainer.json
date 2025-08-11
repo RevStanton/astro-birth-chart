@@ -1,0 +1,11 @@
+{
+  "name": "Astro Birth Chart",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bookworm",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "npm i",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "web", "onAutoForward": "openBrowser" }
+  }
+}
