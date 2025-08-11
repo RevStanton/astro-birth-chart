@@ -1,5 +1,5 @@
 // ============================
-// public/app.js  (Lite Mode)
+// public/app.js  (Lite Mode + Insight Writer)
 // ============================
 
 // ---------- DOM ----------
@@ -10,8 +10,10 @@ const housesTable  = document.getElementById("houses-table");
 const aspectsTable = document.getElementById("aspects-table");
 const wheelCanvas  = document.getElementById("wheel");
 const ctx = wheelCanvas.getContext("2d");
+const btnInsights = document.getElementById("btn-insights");
+const insightsOut = document.getElementById("insights-output");
 
-// Optional controls (if present in HTML)
+// Optional controls
 const minorToggle = document.getElementById("show-minor-aspects");
 const astToggle   = document.getElementById("show-asteroids");
 const tooltip     = document.getElementById("tooltip");
@@ -23,6 +25,8 @@ const MINOR_ASPECTS = new Set([
 const ASTEROIDS_OR_POINTS = new Set([
   "Ceres","Vesta","Juno","Pallas","Lilith","Chiron","Mean Node","True Node","Ascendant","Descendant","MC","IC"
 ]);
+
+const CORE_PLANETS = new Set(["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]);
 
 const ABBR = {
   "Sun":"Su","Moon":"Mo","Mercury":"Me","Venus":"Ve","Mars":"Ma","Jupiter":"Ju","Saturn":"Sa",
@@ -40,8 +44,9 @@ const DEFAULT_ORBS = {
   Conjunction: 3, Opposition: 5, Square: 5, Trine: 5, Sextile: 5, Quincunx: 5,
   "Semi-Sextile": 5, Quintile: 5, Octile: 5, Sesquiquadrate: 5, Septile: 3, Novile: 3
 };
+const MAJOR_ASPECTS = ["Conjunction","Opposition","Square","Trine","Sextile"];
 
-// ---------- State (for redraw/hover) ----------
+// ---------- State (for redraw/hover/insights) ----------
 let lastPlanets = [];
 let lastHouses  = [];
 let lastAspects = [];
@@ -105,6 +110,11 @@ function signNameFromDeg(deg) {
   return names[Math.floor(((deg % 360) + 360) % 360 / 30)];
 }
 
+function signFromNumber(n) {
+  const names = ["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"];
+  return names[(Number(n)-1+12)%12];
+}
+
 function buildWholeSignHouses(planets, lang = "en") {
   const asc = planets.find(p => (p?.planet?.[lang] ?? p?.planet?.en) === "Ascendant");
   if (!asc) return [];
@@ -128,9 +138,9 @@ function buildWholeSignHouses(planets, lang = "en") {
 function computeAspectsLocal(planets, options) {
   const {
     lang = "en",
-    allowed = null,            // array or null => all
-    exclude = [],              // array of names to skip
-    orbs = DEFAULT_ORBS        // map
+    allowed = null,
+    exclude = [],
+    orbs = DEFAULT_ORBS
   } = options || {};
 
   const entries = planets
@@ -150,7 +160,7 @@ function computeAspectsLocal(planets, options) {
         if (allowed && !allowed.includes(asp)) continue;
         const orb = orbs?.[asp] ?? DEFAULT_ORBS[asp] ?? 0;
         if (Math.abs(angle - target) <= orb) {
-          out.push({ planet_1: { [lang]: a.name }, planet_2: { [lang]: b.name }, aspect: { [lang]: asp } });
+          out.push({ planet_1: { [lang]: a.name }, planet_2: { [lang]: b.name }, aspect: { [lang]: asp }, exactness: Math.abs(angle - target) });
           break; // one aspect per pair
         }
       }
@@ -164,7 +174,6 @@ form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const fd = new FormData(form);
   const lang = currentLang(fd);
-  const lite = isLite(fd);
   const submitBtn = form.querySelector('button[type="submit"]');
 
   submitBtn.disabled = true;
@@ -189,7 +198,7 @@ form.addEventListener("submit", async (e) => {
 
     const aspects = computeAspectsLocal(planets, { lang, allowed, exclude, orbs });
 
-    // Store for redraws
+    // Store for redraws/insights
     lastPlanets = planets;
     lastHouses  = houses;
     lastAspects = aspects;
@@ -201,6 +210,9 @@ form.addEventListener("submit", async (e) => {
     renderAspectsTable(aspects, lang);
     drawCustomWheel(planets, houses);
     drawAspectLines(aspects, planets, lang);
+
+    // clear insights output
+    if (insightsOut) insightsOut.textContent = "";
   } catch (err) {
     console.error(err);
     alert("Error: " + err.message);
@@ -465,6 +477,242 @@ function aspectColor(aspect) {
   };
   return map[aspect] || "#cccccc";
 }
+
+// =====================================================
+// ===============  INSIGHT WRITER  ====================
+// =====================================================
+
+// Click handler
+if (btnInsights) {
+  btnInsights.addEventListener("click", async () => {
+    if (!lastPlanets.length) { alert("Generate your chart first."); return; }
+
+    btnInsights.disabled = true;
+    const old = btnInsights.textContent;
+    btnInsights.textContent = "Thinking…";
+
+    try {
+      // one extra call: today's planets (UTC now, observation/ayanamsha/language from form)
+      const fd = new FormData(form);
+      const transPayload = buildTodayPlanetsPayload(fd);
+      const transRes = await callAstro("/western/planets", transPayload);
+      const transitPlanets = transRes.output || [];
+
+      const message = buildInsightsText(lastPlanets, lastHouses, lastAspects, transitPlanets);
+      insightsOut.textContent = message;
+    } catch (e) {
+      console.error(e);
+      alert("Insights error: " + e.message);
+    } finally {
+      btnInsights.disabled = false;
+      btnInsights.textContent = old;
+    }
+  });
+}
+
+function buildTodayPlanetsPayload(fd) {
+  const now = new Date();
+  // use UTC for consistency (Angles won't be used for transits)
+  const base = {
+    year: now.getUTCFullYear(),
+    month: now.getUTCMonth() + 1,
+    date: now.getUTCDate(),
+    hours: now.getUTCHours(),
+    minutes: now.getUTCMinutes(),
+    seconds: now.getUTCSeconds(),
+    latitude: parseFloat(fd.get("latitude")) || 0,
+    longitude: parseFloat(fd.get("longitude")) || 0,
+    timezone: 0
+  };
+  const cfg = {
+    observation_point: fd.get("observation_point") || "topocentric",
+    ayanamsha: fd.get("ayanamsha") || "tropical",
+    language: fd.get("language") || "en"
+  };
+  return { ...base, config: cfg };
+}
+
+// Sign + element/quality helpers
+const ELEMENT_BY_SIGN = {
+  Aries:"Fire", Leo:"Fire", Sagittarius:"Fire",
+  Taurus:"Earth", Virgo:"Earth", Capricorn:"Earth",
+  Gemini:"Air", Libra:"Air", Aquarius:"Air",
+  Cancer:"Water", Scorpio:"Water", Pisces:"Water"
+};
+const QUALITY_BY_SIGN = {
+  Aries:"Cardinal", Cancer:"Cardinal", Libra:"Cardinal", Capricorn:"Cardinal",
+  Taurus:"Fixed", Leo:"Fixed", Scorpio:"Fixed", Aquarius:"Fixed",
+  Gemini:"Mutable", Virgo:"Mutable", Sagittarius:"Mutable", Pisces:"Mutable"
+};
+
+// Short blurbs (tiny, tasteful; you can expand later)
+const BLURB_SUN = {
+  Aries:"direct, pioneering, energized", Taurus:"grounded, steady, sensual", Gemini:"curious, witty, adaptable",
+  Cancer:"protective, intuitive, nurturing", Leo:"expressive, bold, warm", Virgo:"precise, helpful, discerning",
+  Libra:"relational, balanced, aesthetic", Scorpio:"intense, perceptive, transformative", Sagittarius:"expansive, candid, adventurous",
+  Capricorn:"disciplined, strategic, patient", Aquarius:"original, humanitarian, future-minded", Pisces:"empathetic, imaginative, porous"
+};
+const BLURB_MOON = {
+  Aries:"acts fast on feelings", Taurus:"needs calm & comfort", Gemini:"talks feelings out",
+  Cancer:"home-centered heart", Leo:"needs to be seen", Virgo:"seeks useful order",
+  Libra:"soothes through harmony", Scorpio:"deep waters; all-or-nothing", Sagittarius:"needs open space",
+  Capricorn:"stoic container", Aquarius:"cool-headed reflector", Pisces:"soaks moods, needs rest"
+};
+const BLURB_ASC = {
+  Aries:"comes in hot; straight shooter", Taurus:"unhurried, dependable presence", Gemini:"quick, lively, chatty",
+  Cancer:"soft shell, warm center", Leo:"sunny, generous aura", Virgo:"neat, noticing everything",
+  Libra:"graceful diplomat", Scorpio:"quiet magnetism", Sagittarius:"big laugh, bigger horizon",
+  Capricorn:"calm, competent", Aquarius:"quirky, friendly outsider", Pisces:"gentle, dreamy vibe"
+};
+
+const ASPECT_TONE = {
+  Conjunction: "amplifies",
+  Trine: "flows easily with",
+  Sextile: "supports and opens a door with",
+  Square: "challenges and sharpens",
+  Opposition: "asks for balance with"
+};
+
+const PLANET_VERBS = {
+  Sun:"identity", Moon:"mood", Mercury:"mind & messages", Venus:"love & aesthetics", Mars:"drive & action",
+  Jupiter:"growth & opportunity", Saturn:"discipline & boundaries", Uranus:"surprise & freedom",
+  Neptune:"dreams & intuition", Pluto:"power & transformation"
+};
+
+function buildInsightsText(natalPlanets, houses, natalAspects, transitPlanets) {
+  // ---------- Big Three ----------
+  const getByName = (arr, name) => arr.find(p => p?.planet?.en === name);
+  const sun = getByName(natalPlanets, "Sun");
+  const moon = getByName(natalPlanets, "Moon");
+  const asc  = getByName(natalPlanets, "Ascendant");
+
+  const sunSign = sun ? sun.zodiac_sign?.name?.en : null;
+  const moonSign = moon ? moon.zodiac_sign?.name?.en : null;
+  const ascSign  = asc  ? asc.zodiac_sign?.name?.en  : null;
+
+  let intro = "Your snapshot:\n";
+  if (sunSign)  intro += `• Sun in ${sunSign}: ${BLURB_SUN[sunSign] || ""}\n`;
+  if (moonSign) intro += `• Moon in ${moonSign}: ${BLURB_MOON[moonSign] || ""}\n`;
+  if (ascSign)  intro += `• Rising ${ascSign}: ${BLURB_ASC[ascSign] || ""}\n`;
+
+  // ---------- Theme: elements / qualities ----------
+  const core = natalPlanets.filter(p => CORE_PLANETS.has(p?.planet?.en));
+  const elementCounts = { Fire:0, Earth:0, Air:0, Water:0 };
+  const qualityCounts = { Cardinal:0, Fixed:0, Mutable:0 };
+  core.forEach(p => {
+    const s = p.zodiac_sign?.name?.en;
+    if (s) { elementCounts[ELEMENT_BY_SIGN[s]]++; qualityCounts[QUALITY_BY_SIGN[s]]++; }
+  });
+  const dominantElement = Object.entries(elementCounts).sort((a,b)=>b[1]-a[1])[0][0];
+  const dominantQuality = Object.entries(qualityCounts).sort((a,b)=>b[1]-a[1])[0][0];
+
+  let themes = `\nChart themes:\n• Element emphasis: ${dominantElement}\n• Mode emphasis: ${dominantQuality}`;
+
+  // Stellium (≥3 in one sign)
+  const signCounts = {};
+  core.forEach(p => {
+    const s = p.zodiac_sign?.name?.en;
+    if (s) signCounts[s] = (signCounts[s]||0)+1;
+  });
+  const stelliumSign = Object.entries(signCounts).find(([,c]) => c>=3)?.[0];
+  if (stelliumSign) themes += `\n• Stellium in ${stelliumSign} (strong focus here)`;
+
+  // Angular planets (within 10° of Asc/Desc/MC/IC)
+  const angleDeg = (name) => getByName(natalPlanets, name)?.fullDegree ?? null;
+  const A = angleDeg("Ascendant"), D = angleDeg("Descendant"), M = angleDeg("MC"), I = angleDeg("IC");
+  const nearAngle = (deg, target) => {
+    if (deg==null || target==null) return false;
+    const diff = Math.abs(deg - target);
+    return Math.min(diff, 360 - diff) <= 10;
+  };
+  const angular = core.filter(p => [A,D,M,I].some(t => nearAngle(p.fullDegree, t))).map(p => p.planet.en);
+  if (angular.length) themes += `\n• Angular emphasis: ${angular.join(", ")}`;
+
+  // Retrogrades
+  const retros = core.filter(p => normalizeBool(p.isRetro)).map(p => p.planet.en + "R");
+  if (retros.length) themes += `\n• Natal retrogrades: ${retros.join(", ")}`;
+
+  // ---------- Tight natal aspects (top 5 major by exactness) ----------
+  const natMaj = natalAspects
+    .filter(a => MAJOR_ASPECTS.includes(a?.aspect?.en))
+    .sort((a,b) => (a.exactness ?? 99) - (b.exactness ?? 99))
+    .slice(0,5);
+  let natTxt = "\nKey natal aspects:\n";
+  if (!natMaj.length) natTxt += "• None of the major aspects stood out tightly.\n";
+  else {
+    natMaj.forEach(a => {
+      natTxt += `• ${a.planet_1.en} ${a.aspect.en} ${a.planet_2.en} — ${ASPECT_TONE[a.aspect.en]} how these two operate.\n`;
+    });
+  }
+
+  // ---------- Transits -> natal (today) ----------
+  const transitAspects = computeTransitToNatalAspects(transitPlanets, natalPlanets, { orbs: { Conjunction:2, Opposition:2, Square:2.5, Trine:2.5, Sextile:2 } });
+  const topTransits = transitAspects
+    .filter(t => CORE_PLANETS.has(t.to)) // to natal core planet
+    .sort((a,b) => a.exactness - b.exactness)
+    .slice(0,3);
+
+  let today = "\nToday’s alignment for you:\n";
+  if (!topTransits.length) today += "• Nothing major pinging the core today—take it steady and follow your baseline rhythm.\n";
+  else {
+    topTransits.forEach(t => {
+      const tone = ASPECT_TONE[t.aspect] || "interacts with";
+      const verb = PLANET_VERBS[t.to] || "life";
+      today += `• Transit ${t.from} ${t.aspect} natal ${t.to}: ${tone} your ${verb}. ${transitHint(t)}\n`;
+    });
+  }
+
+  // ---------- Wrap ----------
+  const wrap = "\nTake what resonates, leave the rest. Use the easy flows; respect the edges. You’ve got this.";
+
+  return [intro, themes, natTxt, today, wrap].join("\n");
+}
+
+function computeTransitToNatalAspects(transitPlanets, natalPlanets, opts) {
+  const lang = "en";
+  const allowed = MAJOR_ASPECTS;
+  const orbs = { ...DEFAULT_ORBS, ...(opts?.orbs||{}) };
+
+  const tEntries = transitPlanets
+    .map(p => ({ name: p?.planet?.[lang] ?? p?.planet?.en, deg: Number(p?.fullDegree||0) }))
+    .filter(e => e.name && CORE_PLANETS.has(e.name)); // ignore angles/asteroids
+
+  const nEntries = natalPlanets
+    .map(p => ({ name: p?.planet?.[lang] ?? p?.planet?.en, deg: Number(p?.fullDegree||0) }))
+    .filter(e => e.name); // include core + angles, but we’ll mostly talk about core
+
+  const out = [];
+  tEntries.forEach(t => {
+    nEntries.forEach(n => {
+      const diff = Math.abs(t.deg - n.deg);
+      const angle = Math.min(diff, 360 - diff);
+      for (const asp of allowed) {
+        const target = ASPECT_DEGREES[asp];
+        const orb = orbs[asp] ?? 0;
+        const exactness = Math.abs(angle - target);
+        if (exactness <= orb) {
+          out.push({ from: t.name, to: n.name, aspect: asp, exactness });
+          break;
+        }
+      }
+    });
+  });
+  return out;
+}
+
+function transitHint(t) {
+  const a = t.aspect, p = t.from, n = t.to;
+  const soft = ["Trine","Sextile"];
+  const hard = ["Square","Opposition"];
+  if (a === "Conjunction") return `Spotlight on ${n.toLowerCase()}. Lean into awareness and keep the volume at a mindful level.`;
+  if (soft.includes(a)) return `Favorable window—make small moves around ${PLANET_VERBS[n] || "priorities"}.`;
+  if (hard.includes(a)) return `Tension exposes growth edges. Avoid extremes; choose one concrete action to honor ${PLANET_VERBS[n] || "this area"}.`;
+  return `Notice the nudge. Micro-adjustments go far today.`;
+}
+
+// =====================================================
+// ===============  END INSIGHT WRITER  ================
+// =====================================================
 
 // ---------- Utils ----------
 function currentLang(fd) { return fd.get("language") || "en"; }
