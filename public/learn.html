@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Learn Astrology — Planets, Signs, Houses & Aspects</title>
+  <link rel="stylesheet" href="./styles.css"/>
+</head>
+<body>
+    <nav class="topnav">
+    <div class="nav-inner">
+        <a href="./index.html" class="brand">Astro</a>
+        <ul class="menu">
+        <li><a href="./index.html" class="nav-link">Chart</a></li>
+        <li><a href="./learn.html" class="nav-link">Learn</a></li>
+        </ul>
+    </div>
+</nav>
+
+
+  <main class="container">
+    <header class="page-header">
+      <h1>Learn Astrology</h1>
+      <p class="sub">Quick, readable bite-sizes first—expand any topic for deeper notes when you want more.</p>
+    </header>
+
+    <!-- Controls -->
+    <section class="card learn-controls">
+      <div class="tabs" id="tabs">
+        <button data-tab="planets" class="tab active">Planets</button>
+        <button data-tab="signs" class="tab">Signs</button>
+        <button data-tab="houses" class="tab">Houses</button>
+        <button data-tab="aspects" class="tab">Aspects</button>
+      </div>
+      <div class="learn-search">
+        <input id="search" placeholder="Search (e.g., communication, career, Sextile)…" />
+      </div>
+    </section>
+
+    <!-- Content grid -->
+    <section class="learn-grid" id="learn-grid" aria-live="polite"></section>
+
+    <footer class="learn-footer">
+      <a class="btn" href="./index.html">← Back to Chart</a>
+    </footer>
+  </main>
+
+  <script type="module" src="./learn.js"></script>
+</body>
+</html>

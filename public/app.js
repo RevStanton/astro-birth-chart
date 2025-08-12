@@ -185,6 +185,29 @@ form.addEventListener("submit", async (e) => {
 
     lastPlanets = planets; lastHouses = houses; lastAspects = aspects;
 
+    // expose to report.js
+    window.__ASTRO_STATE = {
+      planets: planets,     // or lastPlanets if you prefer
+      houses: houses,
+      aspects: aspects,
+      birth: {
+        dateISO: fd.get("date_iso"),
+        timeHM: fd.get("time_hm"),
+        timezone: parseFloat(fd.get("timezone")),
+        latitude: parseFloat(fd.get("latitude")),
+        longitude: parseFloat(fd.get("longitude")),
+        cityState: (document.getElementById("location-input")?.value || "").trim()
+      }
+    };
+
+// enable the report button
+if (window.__ASTRO_REPORT_READY) window.__ASTRO_REPORT_READY();
+
+// (optional) debug
+console.log("ASTRO_STATE", window.__ASTRO_STATE);
+
+// Tell report module to enable the button now
+if (window.__ASTRO_REPORT_READY) window.__ASTRO_REPORT_READY();
     results.classList.remove("hidden");
     renderPlanetsTable(planets, lang);
     renderHousesTable(houses, lang);

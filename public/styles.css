@@ -163,6 +163,197 @@ tbody tr:nth-child(2n){background:#12183a}
   .chart-row { grid-template-columns: 1fr; }         /* already in your CSS, but fine if repeated */
 }
 
+/* ===== Top navigation ===== */
+.topnav{
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(10,14,24,.65);
+  backdrop-filter: saturate(120%) blur(8px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.topnav .nav-inner{
+  max-width: 1200px; margin: 0 auto; padding: 8px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.topnav .brand{
+  color: var(--ink); text-decoration: none;
+  font-weight: 800; letter-spacing: .3px; font-size: 18px;
+}
+.topnav .menu{
+  list-style: none; margin: 0; padding: 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.topnav .nav-link{
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 10px;
+  text-decoration: none; color: var(--ink);
+  border: 1px solid var(--line);
+  background: #1a2148;
+  font-size: 14px; opacity: .95; transition: .15s ease;
+}
+.topnav .nav-link:hover{ filter: brightness(1.07); opacity: 1; }
+.topnav .nav-link.active{
+  background: linear-gradient(180deg,#3a45a3,#2a3279);
+  border-color: #3f4aa9;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+}
+
+/* Mobile: center the menu under the brand */
+@media (max-width: 720px){
+  .topnav .nav-inner{ flex-direction: column; align-items: stretch; gap: 6px; }
+  .topnav .menu{ justify-content: center; flex-wrap: wrap; }
+}
+
+/* ---------- Learn page ---------- */
+.learn-controls{padding:10px}
+.tabs{display:flex; gap:8px; flex-wrap:wrap}
+.tab{
+  padding:8px 12px; border-radius:10px; border:1px solid var(--line);
+  background:#1a2148; color:var(--ink); cursor:pointer; font-size:14px;
+}
+.tab.active{background:#2a3279; border-color:#3f4aa9}
+.learn-search{margin-top:10px}
+.learn-search input{width:100%}
+
+.learn-grid{
+  margin-top:12px;
+  display:grid; gap:12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.learn-card{padding:10px}
+.learn-card h3{margin:0 0 6px}
+.learn-card .tl{margin:0 0 6px; color:var(--muted)}
+.mini-list{margin:0; padding:0 0 0 16px; color:var(--ink)}
+.learn-card details{margin-top:6px}
+.learn-card summary{cursor:pointer; color:var(--accent)}
+.learn-card .more{margin-top:6px; color:var(--ink)}
+
+.learn-footer{margin:16px 0; display:flex; justify-content:flex-end}
+.empty{padding:18px; color:var(--muted)}
+
+/* ============ Chart layout ============ */
+.chart-wrap{
+  position: relative;
+  padding: 16px;
+  display: grid;
+  place-items: center;
+}
+
+.chart-wrap canvas#wheel{
+  width: min(900px, 100%);
+  height: auto;
+  display: block;
+}
+
+/* Legend overlay on chart */
+.legend-overlay{
+  position: absolute;
+  top: 16px; right: 16px;
+  background: rgba(18, 22, 40, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-width: 210px;
+}
+
+.legend-overlay h4{
+  margin: 0 0 6px 0; font-size: 13px; opacity: .9;
+}
+.legend-overlay ul{
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
+}
+.legend-overlay li{
+  display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 8px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.legend-overlay .swatch{
+  width: 14px; height: 3px; border-radius: 2px; display: inline-block;
+}
+/* match your chart colors */
+.swatch.conj   { background: #6ea8ff; }
+.swatch.trine  { background: #38c172; }
+.swatch.square { background: #f66d6d; }
+.swatch.sextile{ background: #fbd38d; }
+.swatch.opp    { background: #c084fc; }
+
+/* ============ Insights ============ */
+.insights-wide{
+  margin-top: 16px;
+  padding: 16px;
+}
+.insights-bar{
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 10px;
+}
+.insights-bar h3{ margin: 0; }
+.insights-bar .bar-actions{ display:flex; gap:8px; flex-wrap: wrap; }
+.insights-output{
+  min-height: 80px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(18,22,40,.35);
+}
+
+/* ============ Details grid ============ */
+.details-grid{
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.detail-card h4{ margin: 0 0 8px 0; }
+
+.table-scroll{
+  max-height: 420px; /* good height on desktop */
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+/* Table styling (compact but readable) */
+.slim-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.slim-table th, .slim-table td{
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  white-space: nowrap;
+}
+.slim-table th{
+  position: sticky; top: 0;
+  background: #131a37;
+  z-index: 1;
+  text-align: left;
+}
+
+/* ============ Responsive tweaks ============ */
+@media (max-width: 1100px){
+  .details-grid{ grid-template-columns: repeat(2, minmax(260px, 1fr)); }
+}
+@media (max-width: 720px){
+  .legend-overlay{
+    position: static; width: 100%;
+    margin-top: 10px;
+  }
+  .details-grid{ grid-template-columns: 1fr; }
+  .table-scroll{ max-height: 320px; }
+  .insights-bar{ flex-direction: column; align-items: stretch; }
+  .insights-bar .bar-actions{ justify-content: flex-start; }
+}
+
+/* Responsive */
+@media (max-width:1100px){
+  .learn-grid{grid-template-columns: repeat(2, minmax(0, 1fr));}
+}
+@media (max-width:720px){
+  .learn-grid{grid-template-columns: 1fr;}
+}
+
 /* Responsive */
 @media (max-width:1100px){
   .grid-3{grid-template-columns:repeat(2,minmax(0,1fr))}

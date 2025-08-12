@@ -10,6 +10,17 @@
   <script src="https://cdn.jsdelivr.net/npm/moment-timezone/builds/moment-timezone-with-data.min.js"></script>
 </head>
 <body>
+  <nav class="topnav">
+  <div class="nav-inner">
+    <a href="./index.html" class="brand">Astro</a>
+    <ul class="menu">
+      <li><a href="./index.html" class="nav-link">Chart</a></li>
+      <li><a href="./learn.html" class="nav-link">Learn</a></li>
+    </ul>
+  </div>
+</nav>
+
+
   <main class="container">
     <header class="page-header">
       <h1>Natal Chart</h1>
@@ -108,35 +119,68 @@
       </div>
     </form>
 
-    <!-- Chart row -->
-    <section class="chart-row">
-      <div class="card chart-card">
-        <canvas id="wheel" width="560" height="560"></canvas>
-      </div>
+    <!-- ================== CHART ================== -->
+    <section class="card chart-wrap">
+      <!-- your canvas stays the same ID -->
+      <canvas id="wheel" width="900" height="900" aria-label="Natal wheel"></canvas>
 
-      <!-- Right column: Legend + Insights stacked -->
-      <aside class="sidebar">
-        <div class="card legend-card">
-          <div class="card-header">Aspects</div>
-          <ul class="legend">
-            <li><span class="leg conj"></span> Conjunction</li>
-            <li><span class="leg trine"></span> Trine</li>
-            <li><span class="leg square"></span> Square</li>
-            <li><span class="leg sextile"></span> Sextile</li>
-            <li><span class="leg opp"></span> Opposition</li>
-          </ul>
-          <div id="tooltip" class="tooltip" hidden></div>
-        </div>
-
-        <section class="card insights">
-          <div class="insights-bar">
-            <h3>Personal Insights</h3>
-            <button id="btn-insights" class="btn">Generate Insights</button>
-          </div>
-          <div id="insights-output" class="insights-output" aria-live="polite"></div>
-        </section>
+      <!-- legend now overlays the chart container -->
+      <aside id="legend" class="legend legend-overlay" aria-label="Aspects legend">
+        <h4>Aspects</h4>
+        <ul>
+          <li><span class="swatch conj"></span> Conjunction</li>
+          <li><span class="swatch trine"></span> Trine</li>
+          <li><span class="swatch square"></span> Square</li>
+          <li><span class="swatch sextile"></span> Sextile</li>
+          <li><span class="swatch opp"></span> Opposition</li>
+        </ul>
       </aside>
     </section>
+
+    <!-- ================== PERSONAL INSIGHTS ================== -->
+    <section class="card insights-wide">
+      <div class="insights-bar">
+        <h3>Personal Insights</h3>
+        <div class="bar-actions">
+          <button id="btn-insights" class="btn">Generate Insights</button>
+          <button id="btn-report" class="btn btn-ghost" disabled>Download PDF Report</button>
+        </div>
+      </div>
+      <div id="insights-output" class="insights-output" aria-live="polite"></div>
+    </section>
+
+    <!-- ================== DETAILS (PLANETS / HOUSES / ASPECTS) ================== -->
+    <section class="details-grid">
+      <div class="card detail-card">
+        <h4>Planets</h4>
+        <div class="table-scroll">
+          <table id="planets-table" class="slim-table"></table>
+        </div>
+      </div>
+
+      <div class="card detail-card">
+        <h4>Houses (Whole Sign)</h4>
+        <div class="table-scroll">
+          <table id="houses-table" class="slim-table"></table>
+        </div>
+      </div>
+
+      <div class="card detail-card">
+        <h4>Aspects (Local)</h4>
+        <div class="table-scroll">
+          <table id="aspects-table" class="slim-table"></table>
+        </div>
+      </div>
+    </section>
+
+
+      <!-- jsPDF + AutoTable (CDN) -->
+      <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
+
+      <!-- Your modules -->
+      <script type="module" src="./app.js"></script>
+      <script type="module" src="./report.js"></script>
 
     <!-- Data widgets -->
     <section id="results" class="widgets hidden">
