@@ -3,41 +3,57 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Natal Chart — Free Astrology API (Lite Mode)</title>
+  <title>Natal Chart — Free Astrology</title>
   <link rel="stylesheet" href="./styles.css"/>
+  <!-- moment + timezone for DST-aware offsets -->
+  <script src="https://cdn.jsdelivr.net/npm/moment@2/moment.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/moment-timezone/builds/moment-timezone-with-data.min.js"></script>
 </head>
 <body>
-  <main>
-    <h1>Natal Chart (Lite Mode — 1 API call)</h1>
+  <main class="container">
+    <header class="page-header">
+      <h1>Natal Chart</h1>
+      <p class="sub">Lite mode: one API call for planets; houses & aspects computed locally.</p>
+    </header>
 
-    <form id="natal-form">
-      <fieldset>
-        <legend>Birth Data</legend>
-        <div class="grid">
-          <label> Date
-            <input type="date" name="date_iso" required />
-          </label>
-          <label> Time (24h)
-            <input type="time" name="time_hm" step="60" required />
-          </label>
-          <label> Seconds
-            <input type="number" name="seconds" min="0" max="59" value="0" required />
-          </label>
-          <label> Latitude
-            <input type="number" step="0.0001" name="latitude" placeholder="39.7684" required />
-          </label>
-          <label> Longitude
-            <input type="number" step="0.0001" name="longitude" placeholder="-86.1581" required />
-          </label>
-          <label> Timezone (e.g. -5, 5.5)
-            <input type="number" step="0.25" name="timezone" placeholder="-5" required />
-          </label>
-        </div>
-      </fieldset>
+    <form id="natal-form" class="card">
+      <div class="grid grid-3">
+        <label> Date
+          <input type="date" name="date_iso" required />
+        </label>
+        <label> Time (24h)
+          <input type="time" name="time_hm" step="60" required />
+        </label>
+        <label> Seconds
+          <input type="number" name="seconds" min="0" max="59" value="0" required />
+        </label>
 
-      <fieldset>
-        <legend>Config</legend>
-        <div class="grid">
+        <!-- Location with autocomplete -->
+        <label class="col-span-2"> Location (city, state or ZIP)
+          <input type="text" name="location_query" id="location-input" autocomplete="off" placeholder="e.g., Newark, DE or 19711" />
+          <div id="location-suggestions" class="suggestions hidden" role="listbox" aria-label="Location suggestions"></div>
+        </label>
+        <label class="align-end">
+          <button type="button" id="btn-lookup" class="btn btn-ghost">Lookup</button>
+        </label>
+
+        <label> Latitude (N+, S-)
+          <input type="number" step="0.0001" name="latitude" placeholder="39.6837" required />
+        </label>
+        <label> Longitude (E+, W-)
+          <input type="number" step="0.0001" name="longitude" placeholder="-75.7497" required />
+        </label>
+        <label> Time zone (auto)
+          <input type="text" id="timezone_label" name="timezone_label" placeholder="America/New_York (UTC-4)" readonly />
+        </label>
+        <input type="hidden" id="timezone" name="timezone" required />
+      </div>
+
+      <div id="lookup-note" class="lookup-note" aria-live="polite"></div>
+
+      <details class="advanced">
+        <summary>Advanced (optional) — filters & colors</summary>
+        <div class="grid grid-3">
           <label> Observation Point
             <select name="observation_point">
               <option value="topocentric" selected>topocentric</option>
@@ -59,17 +75,7 @@
               <option value="pl">pl</option><option value="tr">tr</option>
             </select>
           </label>
-          <label> House System (Lite = Whole Sign)
-            <select name="house_system" disabled>
-              <option>Whole Signs (Lite)</option>
-            </select>
-          </label>
-        </div>
-      </fieldset>
 
-      <details class="advanced">
-        <summary>Advanced (optional) — filters & colors</summary>
-        <div class="grid">
           <label>Exclude Planets (CSV)
             <input type="text" name="exclude_planets" placeholder='Lilith,Chiron'/>
           </label>
@@ -82,57 +88,75 @@
         </div>
       </details>
 
-      <label class="lite-toggle">
-        <input type="checkbox" name="lite_mode" checked />
-        <span>Lite mode (use only /western/planets; compute houses/aspects locally)</span>
-      </label>
-
-      <button type="submit">Generate</button>
-    </form>
-          <!-- Insights -->
-      <section class="insights">
-        <div class="insights-header">
-          <h2>Personal Insights</h2>
-          <button id="btn-insights">Generate Insights</button>
+      <!-- Action bar -->
+      <div class="action-bar">
+        <div class="toggles">
+          <label class="switch">
+            <input type="checkbox" name="lite_mode" checked />
+            <span>Lite mode</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="show-minor-aspects" />
+            <span>Show minor aspects</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="show-asteroids" checked />
+            <span>Show asteroids/points</span>
+          </label>
         </div>
-        <div id="insights-output" class="insights-output" aria-live="polite"></div>
-      </section>
+        <button type="submit" class="btn btn-primary">Generate</button>
+      </div>
+    </form>
+
+    <!-- Chart row -->
+    <section class="chart-row">
+      <div class="card chart-card">
+        <canvas id="wheel" width="560" height="560"></canvas>
+      </div>
+
+      <!-- Right column: Legend + Insights stacked -->
+      <aside class="sidebar">
+        <div class="card legend-card">
+          <div class="card-header">Aspects</div>
+          <ul class="legend">
+            <li><span class="leg conj"></span> Conjunction</li>
+            <li><span class="leg trine"></span> Trine</li>
+            <li><span class="leg square"></span> Square</li>
+            <li><span class="leg sextile"></span> Sextile</li>
+            <li><span class="leg opp"></span> Opposition</li>
+          </ul>
+          <div id="tooltip" class="tooltip" hidden></div>
+        </div>
+
+        <section class="card insights">
+          <div class="insights-bar">
+            <h3>Personal Insights</h3>
+            <button id="btn-insights" class="btn">Generate Insights</button>
+          </div>
+          <div id="insights-output" class="insights-output" aria-live="polite"></div>
+        </section>
+      </aside>
     </section>
 
-    <section id="results" class="hidden">
-      <div class="panel">
-        <canvas id="wheel" width="520" height="520"></canvas>
-        <div class="legend">
-          <div><span class="leg conj"></span> Conjunction</div>
-          <div><span class="leg trine"></span> Trine</div>
-          <div><span class="leg square"></span> Square</div>
-          <div><span class="leg sextile"></span> Sextile</div>
-          <div><span class="leg opp"></span> Opposition</div>
-        </div>
-        <div class="controls">
-          <label><input type="checkbox" id="show-minor-aspects"> Show minor aspects</label>
-          <label><input type="checkbox" id="show-asteroids" checked> Show asteroids/points</label>
-        </div>
-        <div id="tooltip" class="tooltip" hidden></div>
+    <!-- Data widgets -->
+    <section id="results" class="widgets hidden">
+      <div class="card">
+        <div class="card-header">Planets</div>
+        <div class="table-wrap"><table id="planets-table"></table></div>
       </div>
 
-      <div class="tables">
-        <div>
-          <h2>Planets</h2>
-          <table id="planets-table"></table>
-        </div>
-        <div>
-          <h2>Houses (Whole Sign)</h2>
-          <table id="houses-table"></table>
-        </div>
-        <div>
-          <h2>Aspects (Local)</h2>
-          <table id="aspects-table"></table>
-        </div>
+      <div class="card">
+        <div class="card-header">Houses (Whole Sign)</div>
+        <div class="table-wrap"><table id="houses-table"></table></div>
       </div>
 
+      <div class="card">
+        <div class="card-header">Aspects (Local)</div>
+        <div class="table-wrap"><table id="aspects-table"></table></div>
+      </div>
+    </section>
 
-  </main>
+
 
   <script type="module" src="./app.js"></script>
 </body>
