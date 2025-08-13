@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Natal Chart — Free Astrology</title>
@@ -174,14 +175,19 @@
     </section>
 
 
-      <!-- jsPDF + AutoTable (CDN) -->
-      <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
+    <!-- libs for PDF if you use report -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
 
-      <!-- Your modules -->
-      <script type="module" src="./app.js"></script>
-      <script type="module" src="./report.js"></script>
+    <!-- Luxon for timezone (used by geocode.js) -->
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 
+    <!-- our modules (order matters: helpers before app) -->
+    <script type="module" src="./report.js"></script>
+    <script type="module" src="./insights-ai.js"></script>
+    <script type="module" src="./app.js"></script>
+
+      
     <!-- Data widgets -->
     <section id="results" class="widgets hidden">
       <div class="card">

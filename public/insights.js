@@ -75,6 +75,23 @@ function transitHint(t){
   return `Notice the nudge. Micro-adjustments go far today.`;
 }
 
+// public/insights.js
+export function buildLocalInsights(state) {
+  const p = state?.planets || [];
+  const f = name => p.find(x => x?.planet?.en === name);
+  const sun  = f("Sun")?.zodiac_sign?.name?.en;
+  const moon = f("Moon")?.zodiac_sign?.name?.en;
+  const asc  = f("Ascendant")?.zodiac_sign?.name?.en;
+
+  const lines = [];
+  if (sun && moon && asc) {
+    lines.push(`Your vibe blends ${sun} Sun, ${moon} Moon, and ${asc} Rising—think identity, needs, and first impression working as a team.`);
+  }
+  // Add any other heuristic blurbs you had here…
+
+  return lines.join("\n\n") || "Generate your chart first, then tap Generate Insights.";
+}
+
 export function buildInsightsText(natalPlanets, houses, natalAspects, transitPlanets){
   const getByName = (arr, name) => arr.find(p => p?.planet?.en === name);
   const sun = getByName(natalPlanets, "Sun");

@@ -1,129 +1,197 @@
-import {
-  MINOR_ASPECTS, ASTEROIDS_OR_POINTS,
-  toRadians, pointOnCircle, clamp, normalizeBool, aspectColor
-} from "./util.js";
+// public/chart.js
+// ES module that exports drawWheel(planets, houses, aspects, opts)
 
-export function setupChart({ canvas, minorToggle, astToggle, tooltip }){
+const ASPECT_COLORS = {
+  Conjunction: "#6ea8ff",
+  Trine:       "#38c172",
+  Square:      "#f66d6d",
+  Sextile:     "#fbd38d",
+  Opposition:  "#c084fc",
+};
+
+const TAU = Math.PI * 2;
+const toRad = (deg) => (deg * Math.PI) / 180;
+
+function setupCanvas(canvas) {
   const ctx = canvas.getContext("2d");
-  let lastPlanets = [];
-  let lastHouses = [];
-  let lastAspects = [];
-  let lastPoints = [];
-
-  function drawCircle(cx, cy, r){
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = "#2c3358"; ctx.lineWidth = 2; ctx.stroke();
-  }
-  function drawTick(cx, cy, angleRad, r1, r2){
-    const x1 = cx + r1 * Math.cos(angleRad), y1 = cy + r1 * Math.sin(angleRad);
-    const x2 = cx + r2 * Math.cos(angleRad), y2 = cy + r2 * Math.sin(angleRad);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-    ctx.strokeStyle = "#2c3358"; ctx.lineWidth = 1; ctx.stroke();
-  }
-
-  function drawWheel(planets, houses){
-    const cx = canvas.width/2, cy = canvas.height/2;
-    const R_OUTER=240, R_HOUSES=210, R_PLANETS=180;
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    drawCircle(cx,cy,R_OUTER); drawCircle(cx,cy,R_HOUSES); drawCircle(cx,cy,R_PLANETS);
-    for (let i=0;i<12;i++) drawTick(cx,cy,toRadians(i*30), R_HOUSES-6,R_OUTER);
-    houses.forEach(h => drawTick(cx,cy,toRadians(Number(h?.degree||0)), R_HOUSES-5,R_OUTER));
-
-    lastPoints = [];
-    const R_LABEL = R_PLANETS + 12, EDGE_PAD = 8;
-    const useFullLabels = true;
-    const labelSlots = [];
-    const showAst = astToggle ? astToggle.checked : true;
-
-    planets.forEach(p => {
-      const name = p?.planet?.en || "•";
-      if (!showAst && ASTEROIDS_OR_POINTS.has(name)) return;
-      const deg = Number(p?.fullDegree || 0);
-      const [x,y] = pointOnCircle(cx,cy,R_PLANETS,deg);
-      ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fillStyle="#e9ecff"; ctx.fill();
-
-      let label = useFullLabels ? name : name; // keep full labels for now
-      if (normalizeBool(p?.isRetro)) label += "R";
-
-      let placeDeg = deg;
-      while (labelSlots.some(a => Math.abs(a - placeDeg) < 8)) placeDeg += 3;
-      labelSlots.push(placeDeg);
-
-      const [lx,ly] = pointOnCircle(cx,cy,R_LABEL,placeDeg);
-      ctx.font = "12px ui-sans-serif, system-ui, Arial"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      const m = ctx.measureText(label); const w=m.width, h=12;
-      const sideShift = (placeDeg>90 && placeDeg<270) ? -6 : 6;
-      let tx = lx + sideShift, ty = ly;
-      tx = clamp(tx, EDGE_PAD + w/2, canvas.width - EDGE_PAD - w/2);
-      ty = clamp(ty, EDGE_PAD + h/2, canvas.height - EDGE_PAD - h/2);
-      ctx.fillStyle="#c8cee9"; ctx.fillText(label, tx, ty);
-
-      lastPoints.push({ name, x, y, deg });
-    });
-  }
-
-  function drawAspectLines(aspects, planets, lang="en"){
-    const degreeBy = new Map();
-    const showAst = astToggle ? astToggle.checked : true;
-    const showMinor = minorToggle ? minorToggle.checked : false;
-    planets.forEach(p => {
-      const name = (p?.planet?.[lang] ?? p?.planet?.en ?? "").trim();
-      if (!showAst && ASTEROIDS_OR_POINTS.has(name)) return;
-      degreeBy.set(name, Number(p?.fullDegree||0));
-    });
-    const cx = canvas.width/2, cy = canvas.height/2, R_PLANETS = 180;
-
-    aspects.forEach(a => {
-      const asp = a?.aspect?.[lang] ?? a?.aspect?.en;
-      if (!showMinor && MINOR_ASPECTS.has(asp)) return;
-      const p1 = a?.planet_1?.[lang] ?? a?.planet_1?.en;
-      const p2 = a?.planet_2?.[lang] ?? a?.planet_2?.en;
-      const d1 = degreeBy.get(p1), d2 = degreeBy.get(p2);
-      if (d1==null || d2==null) return;
-      const [x1,y1] = pointOnCircle(cx,cy,R_PLANETS,d1);
-      const [x2,y2] = pointOnCircle(cx,cy,R_PLANETS,d2);
-      ctx.lineWidth = 1.2; ctx.globalAlpha=.7; ctx.strokeStyle=aspectColor(asp);
-      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.globalAlpha=1;
-    });
-  }
-
-  // Hover highlight
-  if (canvas && tooltip){
-    canvas.addEventListener("mousemove", (e) => {
-      if (!lastPoints.length) return;
-      const r = canvas.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top;
-      let best=null, bestD2=100; // 10px radius
-      for (const pt of lastPoints){ const d2=(pt.x-mx)**2+(pt.y-my)**2; if (d2<bestD2){best=pt; bestD2=d2;} }
-      if (!best){ tooltip.hidden=true; redraw(); return; }
-      tooltip.style.left = `${e.clientX}px`; tooltip.style.top = `${e.clientY}px`; tooltip.textContent = best.name; tooltip.hidden=false;
-
-      // redraw with focused lines
-      redraw(true);
-      const lang="en";
-      const focused = lastAspects.filter(a => {
-        const p1 = a?.planet_1?.en, p2=a?.planet_2?.en;
-        return p1===best.name || p2===best.name;
-      });
-      drawAspectLines(focused, lastPlanets, lang);
-    });
-    canvas.addEventListener("mouseleave", ()=>{ tooltip.hidden=true; redraw(); });
-  }
-
-  function redraw(dim=false){
-    drawWheel(lastPlanets, lastHouses);
-    if (dim) { ctx.globalAlpha=.15; drawAspectLines(lastAspects, lastPlanets, "en"); ctx.globalAlpha=1; }
-    else drawAspectLines(lastAspects, lastPlanets, "en");
-  }
-
-  // Public API from this module
-  return {
-    render(planets, houses, aspects){
-      lastPlanets = planets; lastHouses = houses; lastAspects = aspects;
-      redraw(false);
-    },
-    bindToggles(){
-      [minorToggle, astToggle].forEach(el => el && el.addEventListener("change", () => redraw(false)));
-    }
-  };
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || canvas.width;
+  const cssH = canvas.clientHeight || canvas.height;
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  ctx.scale(dpr, dpr);
+  return { ctx, w: cssW, h: cssH };
 }
 
+function polar(xc, yc, r, angDeg) {
+  const a = toRad(angDeg - 90); // 0° at top
+  return { x: xc + r * Math.cos(a), y: yc + r * Math.sin(a) };
+}
+
+function clear(ctx, w, h) {
+  ctx.fillStyle = "#0b0f2b";
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawRings(ctx, cx, cy, R) {
+  ctx.strokeStyle = "#2a335f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, TAU);
+  ctx.stroke();
+
+  // sign spokes (every 30°)
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,.12)";
+  for (let d = 0; d < 360; d += 30) {
+    const p1 = polar(cx, cy, R, d);
+    const p2 = polar(cx, cy, R * 0.86, d);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // minor ticks (every 5°)
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,.08)";
+  for (let d = 0; d < 360; d += 5) {
+    const r1 = d % 30 === 0 ? R : R * 0.98;
+    const r2 = R * 0.95;
+    const p1 = polar(cx, cy, r1, d);
+    const p2 = polar(cx, cy, r2, d);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSigns(ctx, cx, cy, R) {
+  const names = [
+    "Aries","Taurus","Gemini","Cancer","Leo","Virgo",
+    "Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"
+  ];
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i < 12; i++) {
+    const midDeg = i * 30 + 15;
+    const p = polar(cx, cy, R * 0.80, midDeg);
+    ctx.fillText(names[i], p.x, p.y);
+  }
+}
+
+function labelFromPlanet(p) {
+  const name = p?.planet?.en || "";
+  const retro = String(p?.isRetro).toLowerCase() === "true" ? " R" : "";
+  return `${name}${retro}`;
+}
+
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+  const rr = Math.min(r, h/2, w/2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x,     y + h, rr);
+  ctx.arcTo(x,     y + h, x,     y,     rr);
+  ctx.arcTo(x,     y,     x + w, y,     rr);
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+function drawPlanets(ctx, cx, cy, R, planets) {
+  const baseR = R * 0.72;
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+
+  planets.forEach((p, idx) => {
+    const deg = (p?.fullDegree ?? 0) % 360;
+    const dot = polar(cx, cy, baseR, deg);
+
+    // planet dot
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, 3, 0, TAU);
+    ctx.fill();
+
+    // label
+    const lbl = labelFromPlanet(p);
+    const radial = baseR + 16 + (idx % 3) * 10;
+    const lp = polar(cx, cy, radial, deg);
+    const textW = ctx.measureText(lbl).width;
+
+    // connector
+    ctx.strokeStyle = "rgba(255,255,255,.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(dot.x, dot.y);
+    ctx.lineTo(lp.x, lp.y);
+    ctx.stroke();
+
+    // background pill for readability
+    ctx.fillStyle = "rgba(18,22,40,.85)";
+    ctx.strokeStyle = "rgba(255,255,255,.08)";
+    roundRect(ctx, lp.x + 6, lp.y - 10, textW + 12, 20, 6, true, true);
+
+    // text
+    ctx.fillStyle = "#e8ebff";
+    ctx.fillText(lbl, lp.x + 12, lp.y);
+  });
+}
+
+function drawAspects(ctx, cx, cy, R, planets, aspects) {
+  const pos = new Map();
+  planets.forEach(p => {
+    const name = p?.planet?.en;
+    if (!name) return;
+    pos.set(name, (p?.fullDegree ?? 0) % 360);
+  });
+
+  const radius = R * 0.62;
+
+  aspects.forEach(a => {
+    const A = a?.planet_1?.en, B = a?.planet_2?.en, asp = a?.aspect?.en;
+    if (!A || !B || !asp) return;
+    const dA = pos.get(A), dB = pos.get(B);
+    if (typeof dA !== "number" || typeof dB !== "number") return;
+
+    const p1 = polar(cx, cy, radius, dA);
+    const p2 = polar(cx, cy, radius, dB);
+
+    const col = ASPECT_COLORS[asp] || "rgba(255,255,255,.25)";
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  });
+}
+
+/**
+ * Draws the wheel.
+ * @param {Array} planets
+ * @param {Array} houses  (unused for now, kept for future)
+ * @param {Array} aspects
+ * @param {Object} opts   { canvas }
+ */
+export function drawWheel(planets = [], houses = [], aspects = [], opts = {}) {
+  const canvas = opts.canvas || document.getElementById("wheel");
+  if (!canvas) return;
+  const { ctx, w, h } = setupCanvas(canvas);
+  clear(ctx, w, h);
+
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = Math.min(w, h) * 0.45;
+
+  drawRings(ctx, cx, cy, R);
+  drawSigns(ctx, cx, cy, R);
+  drawAspects(ctx, cx, cy, R, planets, aspects);
+  drawPlanets(ctx, cx, cy, R, planets);
+}

@@ -1,253 +1,312 @@
-import { currentLang, DEFAULT_ORBS, round2, fmt } from "./util.js";
-import { setupGeocoding } from "./geocode.js";
-import { setupChart } from "./chart.js";
-import { buildInsightsText } from "./insights.js";
+// public/app.js
+// Wires the form, calls planets endpoint (strict payload), renders wheel & tables,
+// and exposes state for insights/report.
 
-// DOM
-const form = document.getElementById("natal-form");
-const results = document.getElementById("results");
+console.log("[app] loaded", document.readyState);
+window.addEventListener("error", e => console.error("[window error]", e.error || e.message));
+window.addEventListener("unhandledrejection", e => console.error("[unhandled]", e.reason));
+
+import { setupGeocoding } from "./geocode.js";
+import { drawWheel } from "./chart.js";
+import { buildLocalInsights } from "./insights.js";
+
+// ---- DOM ----
+function getFormEl() {
+  return document.getElementById("natal-form"); // <-- matches index.html
+}
+const wheelCanvas = document.getElementById("wheel");
 const planetsTable = document.getElementById("planets-table");
 const housesTable  = document.getElementById("houses-table");
 const aspectsTable = document.getElementById("aspects-table");
-const wheelCanvas  = document.getElementById("wheel");
-const tooltip      = document.getElementById("tooltip");
-const minorToggle  = document.getElementById("show-minor-aspects");
-const astToggle    = document.getElementById("show-asteroids");
-const btnInsights  = document.getElementById("btn-insights");
 const insightsOut  = document.getElementById("insights-output");
+const legend       = document.getElementById("legend");
+const liteCheckbox = document.querySelector('input[name="lite_mode"]');
 
-// Modules
-setupGeocoding(form);
-const chart = setupChart({ canvas: wheelCanvas, minorToggle, astToggle, tooltip });
-chart.bindToggles();
+// Init geocoder
+setupGeocoding(getFormEl());
 
-// State
+// ---- State ----
 let lastPlanets = [];
 let lastHouses  = [];
 let lastAspects = [];
 
-// API proxy
-async function callAstro(path, data) {
-  const resp = await fetch("/api/proxy", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, data })
-  });
-  const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const detail = json?.detail;
-    const msg = (typeof detail === "string" && detail) || detail?.message || JSON.stringify(detail || json) || "API error";
-    throw new Error(msg);
+// ---- Helpers ----
+function getFormData() {
+  const form = getFormEl();
+  if (!form) throw new Error("Form '#natal-form' not found.");
+
+  const fd = new FormData(form);
+
+  const dateISO = (fd.get("date_iso") || "").trim();   // "YYYY-MM-DD"
+  const timeHM  = (fd.get("time_hm")  || "").trim();   // "HH:mm"
+
+  const [Y, M, D] = dateISO.split("-").map(n => Number(n));
+  const [HH, MM]  = timeHM.split(":").map(n => Number(n));
+
+  if (!Number.isFinite(Y) || !Number.isFinite(M) || !Number.isFinite(D)) {
+    throw new Error('Field "date_iso" is missing or invalid.');
   }
-  return json;
+  if (!Number.isFinite(HH) || !Number.isFinite(MM)) {
+    throw new Error('Field "time_hm" is missing or invalid.');
+  }
+
+  const seconds   = Number(fd.get("seconds") || 0);
+  const latitude  = Number(fd.get("latitude"));
+  const longitude = Number(fd.get("longitude"));
+  const timezone  = Number(fd.get("timezone")); // hours; filled by geocode.js
+
+  if (!Number.isFinite(seconds)   || seconds < 0 || seconds > 59)  throw new Error('Field "seconds" is missing or invalid.');
+  if (!Number.isFinite(latitude)  || latitude < -90 || latitude > 90)    throw new Error('Field "latitude" is missing or invalid.');
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new Error('Field "longitude" is missing or invalid.');
+  if (!Number.isFinite(timezone)  || timezone < -14 || timezone > 14)     throw new Error('Field "timezone" is missing or invalid.\n\nTip: pick a location from the dropdown so timezone fills in.');
+
+  const config = {
+    observation_point: (fd.get("observation_point") || "topocentric").trim(),
+    ayanamsha: (fd.get("ayanamsha") || "tropical").trim(),
+    language: (fd.get("language") || "en").trim(),
+  };
+
+  // STRICT payload for Free Astrology API (no extra keys!)
+  const payload = {
+    year: Y,
+    month: M,
+    date: D,
+    hours: HH,
+    minutes: MM,
+    seconds,
+    latitude,
+    longitude,
+    timezone,
+    config
+  };
+
+  // meta for UI/report only (not sent to API)
+  const meta = {
+    dateISO,
+    timeHM,
+    timezone,
+    latitude,
+    longitude,
+    cityState: (document.getElementById("location-input")?.value || "").trim()
+  };
+
+  const lite = !!(liteCheckbox && liteCheckbox.checked);
+  return { payload, meta, lite };
 }
 
-// Helpers
-function readCommon(fd) {
-  const [y,m,d] = String(fd.get("date_iso")).split("-").map(n=>parseInt(n,10));
-  const [hh,mm] = String(fd.get("time_hm")).split(":").map(n=>parseInt(n,10));
-  const seconds = parseInt(fd.get("seconds") || "0", 10);
-  const base = {
-    year:y, month:m, date:d,
-    hours:hh, minutes:mm, seconds,
-    latitude: parseFloat(fd.get("latitude")),
-    longitude: parseFloat(fd.get("longitude")),
-    timezone: parseFloat(fd.get("timezone"))
-  };
-  const cfg = {
-    observation_point: fd.get("observation_point") || "topocentric",
-    ayanamsha: fd.get("ayanamsha") || "tropical",
-    language: fd.get("language") || "en"
-  };
-  return { ...base, config: cfg };
+function cell(th) {
+  const e = document.createElement("th");
+  e.textContent = th;
+  return e;
 }
-const buildPlanetsPayload = (fd) => { const {config, ...rest} = readCommon(fd); return { ...rest, config }; };
+function rowTds(vals) {
+  const tr = document.createElement("tr");
+  vals.forEach(v => {
+    const td = document.createElement("td");
+    td.textContent = v;
+    tr.appendChild(td);
+  });
+  return tr;
+}
+function clearTable(t) { if (t) t.innerHTML = ""; }
 
-function signNameFromDeg(deg){
-  const names=["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"];
-  return names[Math.floor(((deg % 360)+360)%360/30)];
+function fillPlanetsTable(planets) {
+  if (!planetsTable) return;
+  clearTable(planetsTable);
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  trh.appendChild(cell("Planet"));
+  trh.appendChild(cell("Sign"));
+  trh.appendChild(cell("Longitude°"));
+  trh.appendChild(cell("Retro"));
+  thead.appendChild(trh);
+  planetsTable.appendChild(thead);
+
+  const tb = document.createElement("tbody");
+  planets.forEach(p => {
+    const name  = p?.planet?.en ?? "";
+    const sign  = p?.zodiac_sign?.name?.en ?? "";
+    const lon   = (p?.fullDegree ?? 0).toFixed(2);
+    const retro = String(p?.isRetro).toLowerCase() === "true" ? "Yes" : "";
+    tb.appendChild(rowTds([name, sign, lon, retro]));
+  });
+  planetsTable.appendChild(tb);
 }
-function buildWholeSignHouses(planets, lang="en"){
-  const asc = planets.find(p => (p?.planet?.[lang] ?? p?.planet?.en) === "Ascendant");
-  if (!asc) return [];
-  const signNum = asc?.zodiac_sign?.number;
-  if (!signNum) return [];
-  const startDeg = (signNum - 1) * 30;
-  const houses=[];
+
+function fillHousesTable(houses) {
+  if (!housesTable) return;
+  clearTable(housesTable);
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  trh.appendChild(cell("House"));
+  trh.appendChild(cell("# Sign"));
+  trh.appendChild(cell("Cuspal°"));
+  thead.appendChild(trh);
+  housesTable.appendChild(thead);
+
+  const tb = document.createElement("tbody");
+  houses.forEach(h => {
+    tb.appendChild(rowTds([
+      h?.House ?? "",
+      h?.zodiac_sign?.name?.en ?? "",
+      (h?.degree ?? 0).toFixed(2)
+    ]));
+  });
+  housesTable.appendChild(tb);
+}
+
+function fillAspectsTable(aspects) {
+  if (!aspectsTable) return;
+  clearTable(aspectsTable);
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  trh.appendChild(cell("Body A"));
+  trh.appendChild(cell("Aspect"));
+  trh.appendChild(cell("Body B"));
+  thead.appendChild(trh);
+  aspectsTable.appendChild(thead);
+
+  const majors = new Set(["Conjunction","Opposition","Square","Trine","Sextile"]);
+  const tb = document.createElement("tbody");
+  (aspects || []).filter(a => majors.has(a?.aspect?.en)).forEach(a => {
+    tb.appendChild(rowTds([
+      a?.planet_1?.en ?? "",
+      a?.aspect?.en ?? "",
+      a?.planet_2?.en ?? ""
+    ]));
+  });
+  aspectsTable.appendChild(tb);
+}
+
+// ---- Local (lite-mode) calculators ----
+function computeWholeSignHousesFromAsc(ascDegree) {
+  const signs = ["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"];
+  const ascSignIndex = Math.floor(((ascDegree % 360)+360)%360 / 30);
+  const houses = [];
   for (let i=0;i<12;i++){
-    const deg = (startDeg + i*30) % 360;
-    houses.push({ House:i+1, degree:deg, normDegree:0, zodiac_sign:{ number:((Math.floor(deg/30))%12)+1, name:{ en: signNameFromDeg(deg) } }});
+    const signIndex = (ascSignIndex + i) % 12;
+    houses.push({
+      House: i+1,
+      degree: (Math.floor(ascDegree/30) * 30 + i*30) % 360,
+      normDegree: 0,
+      zodiac_sign: { number: signIndex+1, name: { en: signs[signIndex] } }
+    });
   }
   return houses;
 }
-function computeAspectsLocal(planets, { lang="en", allowed=null, exclude=[], orbs=DEFAULT_ORBS }={}){
-  const entries = planets.map(p => {
-    const name=(p?.planet?.[lang] ?? p?.planet?.en ?? "").trim();
-    return { name, deg:Number(p?.fullDegree||0) };
-  }).filter(e => e.name && !exclude.includes(e.name));
+function computeAspectsLocal(planets) {
+  const majors = [
+    { name: "Conjunction", angle: 0,   orb: 6 },
+    { name: "Opposition",  angle: 180, orb: 6 },
+    { name: "Square",      angle: 90,  orb: 6 },
+    { name: "Trine",       angle: 120, orb: 6 },
+    { name: "Sextile",     angle: 60,  orb: 4 },
+  ];
+  const pts = planets.map(p => ({
+    name: p?.planet?.en,
+    deg: (p?.fullDegree ?? 0) % 360
+  })).filter(p => !!p.name);
 
-  const ASPECT_DEGREES = {
-    "Conjunction": 0, "Opposition": 180, "Square": 90, "Trine": 120, "Sextile": 60,
-    "Quincunx": 150, "Semi-Sextile": 30, "Quintile": 72, "Octile": 45, "Sesquiquadrate": 135,
-    "Septile": 51.4286, "Novile": 40
-  };
-
-  const out=[];
-  for (let i=0;i<entries.length;i++){
-    for (let j=i+1;j<entries.length;j++){
-      const a=entries[i], b=entries[j];
+  const out = [];
+  for (let i=0;i<pts.length;i++){
+    for (let j=i+1;j<pts.length;j++){
+      const a = pts[i], b = pts[j];
       const diff = Math.abs(a.deg - b.deg);
-      const angle = Math.min(diff, 360 - diff);
-      for (const [asp,target] of Object.entries(ASPECT_DEGREES)){
-        if (allowed && !allowed.includes(asp)) continue;
-        const orb = orbs?.[asp] ?? DEFAULT_ORBS[asp] ?? 0;
-        const exactness = Math.abs(angle - target);
-        if (exactness <= orb){ out.push({ planet_1:{[lang]:a.name}, planet_2:{[lang]:b.name}, aspect:{[lang]:asp}, exactness }); break; }
+      const sep = Math.min(diff, 360 - diff);
+      for (const asp of majors){
+        if (Math.abs(sep - asp.angle) <= asp.orb){
+          out.push({ planet_1:{en:a.name}, planet_2:{en:b.name}, aspect:{en:asp.name} });
+          break;
+        }
       }
     }
   }
   return out;
 }
 
-// Tables
-function tableFromRows(el, rows, cols){
-  const thead = `<thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead>`;
-  const tbody = `<tbody>${
-    rows.map(r => `<tr>${cols.map(c => `<td title="${String(r[c.key] ?? "")}">${fmt(r[c.key])}</td>`).join("")}</tr>`).join("")
-  }</tbody>`;
-  el.innerHTML = thead + tbody;
-}
-function renderPlanetsTable(rows, lang){
-  const flat = rows.map(r => ({
-    planet: r?.planet?.[lang] ?? "",
-    sign: r?.zodiac_sign?.name?.[lang] ?? "",
-    fullDegree: round2(r?.fullDegree),
-    normDegree: round2(r?.normDegree),
-    retro: String(r?.isRetro).toLowerCase()==="true"
-  }));
-  tableFromRows(planetsTable, flat, [
-    {key:"planet",label:"Planet"},
-    {key:"sign",label:"Sign"},
-    {key:"fullDegree",label:"Longitude° (0–360)"},
-    {key:"normDegree",label:"Norm° (0–30)"},
-    {key:"retro",label:"Retro"}
-  ]);
-}
-function renderHousesTable(rows, lang){
-  const flat = rows.map(r => ({
-    house:r?.House,
-    sign:r?.zodiac_sign?.name?.[lang] ?? r?.zodiac_sign?.name?.en ?? "",
-    degree: round2(r?.degree),
-    normDegree: round2(r?.normDegree)
-  }));
-  tableFromRows(housesTable, flat, [
-    {key:"house",label:"House"},
-    {key:"sign",label:"Sign"},
-    {key:"degree",label:"Longitude° (0–360)"},
-    {key:"normDegree",label:"Norm° (0–30)"}
-  ]);
-}
-function renderAspectsTable(rows, lang){
-  const flat = rows.map(r => ({ p1:r?.planet_1?.[lang] ?? "", p2:r?.planet_2?.[lang] ?? "", aspect:r?.aspect?.[lang] ?? "" }));
-  tableFromRows(aspectsTable, flat, [
-    {key:"p1",label:"Body A"},
-    {key:"p2",label:"Body B"},
-    {key:"aspect",label:"Aspect"}
-  ]);
+// ---- API calls ----
+async function fetchPlanets(payload) {
+  console.log("[app] POST /api/western/planets payload:", payload);
+  const r = await fetch("/api/western/planets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    console.error("[app] planets error", r.status, text);
+    throw new Error(`Planets API error (${r.status}): ${text}`);
+  }
+  const data = await r.json();
+  return Array.isArray(data?.output) ? data.output : (data?.output || data || []);
 }
 
-// Submit flow
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const fd = new FormData(form);
-  const lang = currentLang(fd);
-  const submitBtn = form.querySelector('button[type="submit"]');
+// ---- Render & publish ----
+function renderAll(planets, houses, aspects) {
+  if (wheelCanvas) {
+    drawWheel(planets, houses, aspects, { canvas: wheelCanvas, legendEl: legend });
+  }
+  fillPlanetsTable(planets);
+  fillHousesTable(houses);
+  fillAspectsTable(aspects);
+}
+function publishState(meta, planets, houses, aspects) {
+  window.__ASTRO_STATE = { planets, houses, aspects, birth: meta };
+  if (window.__ASTRO_REPORT_READY) window.__ASTRO_REPORT_READY();
+}
 
-  submitBtn.disabled = true;
-  const labelOrig = submitBtn.textContent;
-  submitBtn.textContent = "Generating…";
-
+// ---- Generate handler ----
+async function onGenerate(e) {
+  e?.preventDefault?.();
   try {
-    const planetsRes = await callAstro("/western/planets", buildPlanetsPayload(fd));
-    const planets = planetsRes.output || [];
+    const { payload, meta, lite } = getFormData();
 
-    const houses = buildWholeSignHouses(planets, lang);
+    const planets = await fetchPlanets(payload);
 
-    const allowed = (fd.get("allowed_aspects") || "").trim()
-      ? fd.get("allowed_aspects").split(",").map(s => s.trim()).filter(Boolean)
-      : null;
-    const exclude = (fd.get("exclude_planets") || "").trim()
-      ? fd.get("exclude_planets").split(",").map(s => s.trim()).filter(Boolean)
-      : [];
-    const orbs = (()=>{ try{return JSON.parse(fd.get("orb_values")||"");}catch{return DEFAULT_ORBS;} })();
-
-    const aspects = computeAspectsLocal(planets, { lang, allowed, exclude, orbs });
+    let houses, aspects;
+    const asc = planets.find(p => p?.planet?.en === "Ascendant");
+    const ascDeg = asc?.fullDegree ?? 0;
+    houses = computeWholeSignHousesFromAsc(ascDeg);
+    aspects = computeAspectsLocal(planets);
 
     lastPlanets = planets; lastHouses = houses; lastAspects = aspects;
 
-    // expose to report.js
-    window.__ASTRO_STATE = {
-      planets: planets,     // or lastPlanets if you prefer
-      houses: houses,
-      aspects: aspects,
-      birth: {
-        dateISO: fd.get("date_iso"),
-        timeHM: fd.get("time_hm"),
-        timezone: parseFloat(fd.get("timezone")),
-        latitude: parseFloat(fd.get("latitude")),
-        longitude: parseFloat(fd.get("longitude")),
-        cityState: (document.getElementById("location-input")?.value || "").trim()
-      }
-    };
-
-// enable the report button
-if (window.__ASTRO_REPORT_READY) window.__ASTRO_REPORT_READY();
-
-// (optional) debug
-console.log("ASTRO_STATE", window.__ASTRO_STATE);
-
-// Tell report module to enable the button now
-if (window.__ASTRO_REPORT_READY) window.__ASTRO_REPORT_READY();
-    results.classList.remove("hidden");
-    renderPlanetsTable(planets, lang);
-    renderHousesTable(houses, lang);
-    renderAspectsTable(aspects, lang);
-    chart.render(planets, houses, aspects);
-    if (insightsOut) insightsOut.textContent = "";
+    renderAll(planets, houses, aspects);
+    publishState(meta, planets, houses, aspects);
   } catch (err) {
-    console.error(err);
-    alert("Error: " + err.message);
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = labelOrig;
+    console.error("[app] generate error", err);
+    alert(err.message || "Could not generate the chart. Check console for details.");
+  }
+}
+
+// ---- Insights ----
+document.getElementById("btn-insights")?.addEventListener("click", async () => {
+  if (!window.__ASTRO_STATE?.planets?.length) {
+    if (insightsOut) insightsOut.textContent = "Generate your chart first.";
+    return;
+  }
+  // Optional AI first (if you wired insights-ai.js)
+  let usedAI = false;
+  if (window.__ASTRO_AI_INSIGHTS?.generateAIInsights) {
+    const text = await window.__ASTRO_AI_INSIGHTS.generateAIInsights(window.__ASTRO_STATE);
+    usedAI = typeof text === "string" && text.length > 0;
+    if (usedAI && insightsOut) insightsOut.textContent = text;
+  }
+  if (!usedAI && insightsOut) {
+    insightsOut.textContent = buildLocalInsights(window.__ASTRO_STATE);
   }
 });
 
-// Insights button (1 extra API call for today's transits)
-if (btnInsights){
-  btnInsights.addEventListener("click", async () => {
-    if (!lastPlanets.length){ alert("Generate your chart first."); return; }
-    btnInsights.disabled = true; const old=btnInsights.textContent; btnInsights.textContent="Thinking…";
-    try {
-      const fd = new FormData(form);
-      const now = new Date();
-      const payload = {
-        year: now.getUTCFullYear(), month: now.getUTCMonth()+1, date: now.getUTCDate(),
-        hours: now.getUTCHours(), minutes: now.getUTCMinutes(), seconds: now.getUTCSeconds(),
-        latitude: parseFloat(fd.get("latitude"))||0, longitude: parseFloat(fd.get("longitude"))||0, timezone: 0,
-        config: {
-          observation_point: fd.get("observation_point") || "topocentric",
-          ayanamsha: fd.get("ayanamsha") || "tropical",
-          language: fd.get("language") || "en"
-        }
-      };
-      const tr = await callAstro("/western/planets", payload);
-      const transit = tr.output || [];
-      insightsOut.textContent = buildInsightsText(lastPlanets, lastHouses, lastAspects, transit);
-    } catch(e){
-      alert("Insights error: " + e.message);
-    } finally {
-      btnInsights.disabled=false; btnInsights.textContent=old;
-    }
-  });
+// ---- Wire form ----
+function wireGenerate() {
+  const form = getFormEl();
+  const btn = form?.querySelector('button[type="submit"]');
+  form?.addEventListener("submit", onGenerate);
+  // safety: also attach to the button
+  btn?.addEventListener("click", onGenerate);
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", wireGenerate);
+} else {
+  wireGenerate();
 }
