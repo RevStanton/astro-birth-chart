@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function (req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
     return res.status(405).json({ message: "Method Not Allowed" });
@@ -41,4 +41,4 @@ export default async function handler(req, res) {
     console.error("[api/ai/insights] error", err);
     res.status(500).json({ message: "Server error" });
   }
-}
+};

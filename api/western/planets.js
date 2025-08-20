@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function (req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
     return res.status(405).json({ message: "Method Not Allowed" });
@@ -6,7 +6,6 @@ export default async function handler(req, res) {
 
   const FREE_ASTROLOGY_BASE = process.env.FREE_ASTROLOGY_BASE || "https://json.freeastrologyapi.com";
   const FREE_ASTROLOGY_API_KEY = process.env.FREE_ASTROLOGY_API_KEY;
-
   if (!FREE_ASTROLOGY_API_KEY) {
     return res.status(500).json({ message: "FREE_ASTROLOGY_API_KEY not configured" });
   }
@@ -20,11 +19,10 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(req.body || {}),
     });
-
     const text = await upstream.text();
     res.status(upstream.status).type("application/json").send(text);
   } catch (err) {
     console.error("[api/western/planets] error", err);
     res.status(500).json({ message: "Server error" });
   }
-}
+};
