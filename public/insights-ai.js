@@ -38,7 +38,7 @@ async function generateAIInsights(state) {
   try {
     const { big3, planetsBrief, housesBrief, aspectsTop } = buildBriefsFromState(state);
 
-    const resp = await fetch("/ai/insights", {
+    const resp = await fetch("/api/ai/insights", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
